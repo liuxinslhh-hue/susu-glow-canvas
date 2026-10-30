@@ -1,0 +1,54 @@
+'use strict';
+// Original particle-advection artwork. No external library, model, or network call.
+const canvas=document.querySelector('#art'),ctx=canvas.getContext('2d',{alpha:false});
+const letters=document.querySelector('#letter'),lc=letters.getContext('2d');
+const trail=document.createElement('canvas'),tc=trail.getContext('2d');
+let W=0,H=0,dpr=1,t=0,palette=0,paused=matchMedia('(prefers-reduced-motion: reduce)').matches,points=[],particles=[],last=0,glyphs=[];
+const colors=[['#70f8d7','#4eafda','#b387ef'],['#ffd08a','#ff956d','#f05f97'],['#75e4ed','#559be8','#8b7bef'],['#fac1d8','#e589cb','#aa90fa']];
+const params=new URLSearchParams(location.search);
+const names=['极光','落日','深海','玫瑰'];
+let demoTime=0,demoActive=!paused,quality=1,frameSum=0,frameCount=0,slowWindows=0;
+function cleanName(value){return Array.from(value.normalize('NFC').replace(/[^\p{L}\p{N}\p{M} ·_-]/gu,'')).slice(0,6).join('').trim();}
+const nameInput=document.querySelector('#name');
+nameInput.value=cleanName(params.get('name')||'流光')||'流光';
+palette=Math.max(0,names.indexOf(params.get('theme')));
+function syncPalette(){document.querySelectorAll('.swatch').forEach(b=>{let on=+b.dataset.palette===palette;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on)});document.querySelector('#paletteName').textContent=names[palette];}
+syncPalette();
+const pointer={x:0,y:0,px:0,py:0,down:false,active:false};
+function resize(){W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);letters.width=canvas.width;letters.height=canvas.height;lc.setTransform(dpr,0,0,dpr,0,0);trail.width=Math.round(W);trail.height=Math.round(H);particles=Array.from({length:W<700?750:1400},()=>spawn());seed();drawLetters();if(!paused)moveGlyphs(.016);render();}
+function spawn(x,y){const a=Math.random()*Math.PI*2,r=Math.random();return{x:x??W*(.64+Math.cos(a)*(.12+r*.19)),y:y??H*(.46+Math.sin(a)*(.10+r*.23)),age:Math.random()*190,life:120+Math.random()*190,c:Math.floor(Math.random()*3),v:.5+Math.random()*1.3};}
+function seed(){tc.fillStyle='#07090e';tc.fillRect(0,0,W,H);for(let i=0;i<35;i++)advance(.016);}
+function advance(dt){t+=dt;tc.globalCompositeOperation='source-over';tc.fillStyle='rgba(7,9,14,0.032)';tc.fillRect(0,0,W,H);tc.globalCompositeOperation='lighter';const scale=Math.min(W,H);for(let i=0;i<particles.length;i++){let p=particles[i];p.age++;if(p.age>p.life||p.x<-60||p.x>W+60||p.y<-60||p.y>H+60){particles[i]=spawn();continue;}const x=p.x,y=p.y;const nx=(x-W*.65)/scale,ny=(y-H*.46)/scale;const r=Math.sqrt(nx*nx+ny*ny);let angle=Math.atan2(ny,nx)+Math.PI/2+Math.sin(r*13-t*.5)*.5;angle+=Math.sin(x*.004+y*.005+t*.22)*.38+Math.cos(y*.008-t*.17)*.28;let vx=Math.cos(angle)*p.v*1.35,vy=Math.sin(angle)*p.v*1.35;for(const q of points){const dx=x-q.x,dy=y-q.y,d2=dx*dx+dy*dy+500,force=Math.min(3.5,5000/d2)*q.life;vx+=(-dy/Math.sqrt(d2)*2+q.vx*.04)*force;vy+=(dx/Math.sqrt(d2)*2+q.vy*.04)*force;}p.x+=vx*dt*60;p.y+=vy*dt*60;const fade=Math.min(p.age/24,(p.life-p.age)/40,1);tc.globalAlpha=fade*.3;tc.strokeStyle=colors[palette][p.c];tc.lineWidth=.45+p.c*.3;tc.beginPath();tc.moveTo(x,y);tc.lineTo(p.x,p.y);tc.stroke();}tc.globalAlpha=1;points=points.filter(q=>(q.life-=dt*.85)>0);}
+function render(){ctx.fillStyle='#07090e';ctx.fillRect(0,0,W,H);ctx.globalCompositeOperation='screen';ctx.filter='blur(17px)';ctx.globalAlpha=.8;ctx.drawImage(trail,0,0,W,H);ctx.filter='blur(4px)';ctx.globalAlpha=.5;ctx.drawImage(trail,0,0,W,H);ctx.filter='none';ctx.globalAlpha=.9;ctx.drawImage(trail,0,0,W,H);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';const vignette=ctx.createRadialGradient(W*.6,H*.45,0,W*.6,H*.45,Math.max(W,H)*.75);vignette.addColorStop(.2,'#07090e00');vignette.addColorStop(1,'#07090ec0');ctx.fillStyle=vignette;ctx.fillRect(0,0,W,H);}
+function drawLetters(){
+ const mask=document.createElement('canvas');mask.width=Math.ceil(W);mask.height=Math.ceil(H);const m=mask.getContext('2d',{willReadFrequently:true});
+ const value=document.querySelector('#name').value.trim()||'流光';
+ const mobile=W<700,maxWidth=mobile?W*.84:W*.47;let size=mobile?90:155;
+ m.font=`600 ${size}px "PingFang SC", sans-serif`;size*=Math.min(1,maxWidth/m.measureText(value).width);m.font=`600 ${size}px "PingFang SC", sans-serif`;
+ m.textAlign='center';m.textBaseline='middle';m.fillStyle='white';m.fillText(value,mobile?W*.5:W*.69,mobile?H*.52:H*.47);
+ const data=m.getImageData(0,0,mask.width,mask.height).data;const targets=[];const step=W<700?1.5:1.6;
+ for(let y=0;y<H;y+=step)for(let x=0;x<W;x+=step){if(data[(Math.floor(y)*mask.width+Math.floor(x))*4+3]>120)targets.push({x,y});}
+ const cap=Math.round((W<700?3000:8000)*quality);const chosen=targets.filter((_,i)=>i%Math.max(1,Math.ceil(targets.length/cap))===0);
+ glyphs=chosen.map((g,i)=>({x:g.x,y:g.y,tx:g.x,ty:g.y,vx:0,vy:0,c:i%3,phase:Math.random()*6.28}));
+ if(paused){glyphs.forEach(g=>{g.x=g.tx;g.y=g.ty});renderGlyphs();}
+}
+function moveGlyphs(dt){const h=Math.min(dt*60,2);for(const g of glyphs){let ax=(g.tx-g.x)*.025,ay=(g.ty-g.y)*.025;const dx=g.x-pointer.x,dy=g.y-pointer.y,d=Math.hypot(dx,dy),radius=pointer.down?150:90;
+ if(pointer.active&&d<radius){const force=(1-d/radius)*(pointer.down?2.8:1.4);ax+=(dx/(d||1)*force)+(-dy/(d||1)*force*.5);ay+=(dy/(d||1)*force)+(dx/(d||1)*force*.5);}
+ g.vx=(g.vx+ax*h)*Math.pow(.88,h);g.vy=(g.vy+ay*h)*Math.pow(.88,h);g.x+=g.vx*h;g.y+=g.vy*h;}renderGlyphs();}
+function renderGlyphs(){lc.clearRect(0,0,W,H);lc.globalCompositeOperation='lighter';lc.shadowBlur=7;for(let c=0;c<3;c++){lc.fillStyle=colors[palette][c];lc.shadowColor=colors[palette][c];lc.beginPath();for(const g of glyphs){if(g.c!==c)continue;const wave=paused?0:Math.sin(t*1.7+g.phase)*.4;lc.rect(g.x+wave,g.y+wave,1.35,1.35);}lc.fill();}lc.shadowBlur=0;lc.globalCompositeOperation='source-over';}
+function startDemo(){demoTime=0;demoActive=true;paused=false;pointer.active=false;pointer.down=false;glyphs.forEach(g=>{g.x=g.tx;g.y=g.ty;g.vx=0;g.vy=0});motionUI();}
+function demo(dt){if(!demoActive)return;demoTime+=dt;if(demoTime>.55&&demoTime<1.65){const u=(demoTime-.55)/1.1;pointer.x=W*(W<700?.24+u*.52:.52+u*.32);pointer.y=H*(W<700?.52:.47)+Math.sin(u*6.28)*30;pointer.active=true;pointer.down=true;}else{pointer.active=false;pointer.down=false;}if(demoTime>=4.999)demoActive=false;}
+function frame(now){const rawDt=(now-last)/1000||.016;const dt=Math.min(rawDt,.035);last=now;if(!paused){demo(Math.min(rawDt,.1));advance(dt);moveGlyphs(dt);render();}if(!paused&&!document.hidden){frameSum+=rawDt;frameCount++;if(frameCount>=120){if(frameSum/frameCount>.025){slowWindows++;if(slowWindows>=2&&quality>.35){quality*=.7;glyphs=glyphs.filter((_,i)=>i%3!==0);particles=particles.filter((_,i)=>i%3!==0);slowWindows=0;}}else slowWindows=0;frameSum=0;frameCount=0;}}requestAnimationFrame(frame);}
+function interact(e){if(e.target!==canvas)return;demoActive=false;pointer.px=pointer.x;pointer.py=pointer.y;pointer.x=e.clientX;pointer.y=e.clientY;if(!pointer.active){pointer.px=pointer.x;pointer.py=pointer.y;pointer.active=true;}points.push({x:pointer.x,y:pointer.y,vx:pointer.x-pointer.px,vy:pointer.y-pointer.py,life:1});if(points.length>20)points.shift();for(let i=0;i<(pointer.down?18:5);i++){const p=spawn(pointer.x+(Math.random()-.5)*30,pointer.y+(Math.random()-.5)*30);p.age=22;particles[Math.floor(Math.random()*particles.length)]=p;}if(paused){advance(.016);render();}}
+canvas.addEventListener('pointerdown',e=>{pointer.down=true;canvas.setPointerCapture(e.pointerId);interact(e)});canvas.addEventListener('pointermove',interact);canvas.addEventListener('pointerup',()=>{pointer.down=false;pointer.active=false});canvas.addEventListener('pointercancel',()=>{pointer.down=false;pointer.active=false});canvas.addEventListener('pointerleave',()=>pointer.active=false);
+document.querySelectorAll('.swatch').forEach(b=>b.addEventListener('click',()=>{palette=+b.dataset.palette;document.querySelectorAll('.swatch').forEach(s=>{const active=s===b;s.classList.toggle('active',active);s.setAttribute('aria-pressed',active)});document.querySelector('#paletteName').textContent=names[palette];renderGlyphs();seed();render();}));
+nameInput.addEventListener('input',e=>{if(e.isComposing)return;nameInput.value=cleanName(nameInput.value);demoActive=false;drawLetters();});nameInput.addEventListener('compositionend',()=>{nameInput.value=cleanName(nameInput.value);drawLetters();startDemo();});nameInput.addEventListener('change',startDemo);
+document.querySelector('#reset').addEventListener('click',()=>{particles=particles.map(()=>spawn());points=[];drawLetters();seed();render();startDemo();toast('正在重播5秒演示');});
+function motionUI(){document.querySelector('#motion').textContent=paused?'继续流动':'暂停流动'}motionUI();document.querySelector('#motion').addEventListener('click',()=>{paused=!paused;motionUI()});
+document.querySelector('#clean').addEventListener('click',()=>{document.body.classList.add('clean');document.querySelector('#restore').hidden=false});document.querySelector('#restore').addEventListener('click',()=>{document.body.classList.remove('clean');document.querySelector('#restore').hidden=true});addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('clean');document.querySelector('#restore').hidden=true;}});
+let toastTimer;function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.opacity=0,2600)}
+document.querySelector('#save').addEventListener('click',()=>{render();const out=document.createElement('canvas');out.width=canvas.width;out.height=canvas.height;const oc=out.getContext('2d');oc.drawImage(canvas,0,0);oc.drawImage(letters,0,0);oc.font=`${11*dpr}px sans-serif`;oc.fillStyle='#b3d6ca80';oc.fillText('SUSU LAB / 流光画布',28*dpr,out.height-28*dpr);out.toBlob(blob=>{if(!blob){toast('保存失败，请重试');return;}const url=URL.createObjectURL(blob),a=document.createElement('a');a.download='susu-glow-'+Date.now()+'.png';a.href=url;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已生成图片；手机可在下载中查看');},'image/png')});
+addEventListener('resize',resize);resize();requestAnimationFrame(frame);
+
+document.querySelector('#share').addEventListener('click',async()=>{const url=new URL(location.href);if(!/^https?:$/.test(url.protocol)){toast('Sharing requires an online website');return;}url.search='';url.hash='';url.searchParams.set('name',cleanName(nameInput.value)||'流光');url.searchParams.set('theme',names[palette]);try{await navigator.clipboard.writeText(url.href);toast('链接已复制，打开即播放这个名字');}catch{const field=document.querySelector('#shareLink');field.hidden=false;field.value=url.href;field.select();toast('请复制下方链接');}});
+document.querySelector('#replay').addEventListener('click',startDemo);
